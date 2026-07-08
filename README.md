@@ -160,14 +160,24 @@ Permanent case deletion removes database rows and the owned attachment directori
 
 ## Security
 
-The app runs locally on `127.0.0.1` with no authentication or multi-tenancy. Security features include:
+Security features include:
 
-- **Host allowlist**: only localhost addresses are accepted.
-- **Unsafe-method header requirement**: `POST`, `PATCH`, `PUT`, and `DELETE` requests must include `X-EmailChrono-Local: 1` header to prevent cross-site script attacks.
-- **Ingest resource limits**: individual files (100 MB), upload batches (500 MB), attachment blobs (50 MB), PDF pages (1000). Oversized items are skipped with warnings, not fatal.
-- **Source blob validation**: SHA-256 content-addressing with path-traversal protection on store and import.
-- **Excel formula escaping**: exported `.xlsx` workbooks have formula-like cell values prefixed with `'` to prevent injection.
-- **HTML sanitization**: rendered email HTML allows only `cid:` and `data:` image sources; external URLs are blocked via restrictive iframe sandbox and Content-Security-Policy.
+  - **Host header allowlist**: requests are accepted only when the `Host` header is one of the configured
+  localhost development/app hosts.
+  - **Unsafe-method local header requirement**: `POST`, `PATCH`, `PUT`, and `DELETE` requests must include
+  `X-EmailChrono-Local: 1`, which helps block simple cross-site write/CSRF attempts from other websites.
+  - **Ingest resource limits**: individual files are capped at 100 MB, upload batches at 500 MB, attachment
+  blobs at 50 MB, and PDFs at 1000 pages. Oversized individual files, attachments, and PDFs are recorded as
+  skipped or warnings where possible; oversized upload batches are rejected with HTTP 413.
+  - **Source blob validation**: managed source blobs use SHA-256 content-addressing. Stored/imported blob
+  names are validated as SHA-256 hashes, import verifies blob contents against the hash, and source-store
+  paths are constrained to the managed source directory.
+  - **Excel formula escaping**: exported `.xlsx` chronology cells containing formula-like text are prefixed
+  with `'` so Excel treats them as text.
+  - **Email HTML rendering controls**: email HTML is sanitized before storage/rendering. Image `src`
+  attributes are limited by sanitizer/CSP to `cid:` and `data:` sources in the rendered iframe, scripts/
+  object/form/connect behavior is blocked by CSP, and rendering occurs in a sandboxed iframe. Sanitized
+  external links may still appear as links.
 
 ## Development
 
