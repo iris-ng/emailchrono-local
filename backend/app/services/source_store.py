@@ -14,6 +14,8 @@ import hashlib
 import os
 import re
 import shutil
+import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -56,8 +58,23 @@ def managed_path(sha: str) -> Path:
 
 
 def can_open_sources() -> bool:
-    """The open route hands files to os.startfile, which only Windows has."""
-    return hasattr(os, "startfile")
+    """Windows opens files with os.startfile, macOS with /usr/bin/open."""
+    return hasattr(os, "startfile") or sys.platform == "darwin"
+
+
+def open_with_default_app(path: Path) -> None:
+    """Open ``path`` in the platform's default app.
+
+    Raises NotImplementedError where unsupported, and OSError or
+    subprocess.SubprocessError if the open fails.
+    """
+    if hasattr(os, "startfile"):
+        os.startfile(str(path))  # type: ignore[attr-defined]
+    elif sys.platform == "darwin":
+        # Fixed executable and argument list, no shell, absolute path.
+        subprocess.run(["/usr/bin/open", str(path.resolve())], check=True, capture_output=True, timeout=15)
+    else:
+        raise NotImplementedError("Opening source files is only supported on Windows and macOS")
 
 
 def remove_source(sha: str) -> None:
