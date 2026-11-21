@@ -71,10 +71,33 @@ def open_with_default_app(path: Path) -> None:
     if hasattr(os, "startfile"):
         os.startfile(str(path))  # type: ignore[attr-defined]
     elif sys.platform == "darwin":
-        # Fixed executable and argument list, no shell, absolute path.
-        subprocess.run(["/usr/bin/open", str(path.resolve())], check=True, capture_output=True, timeout=15)
+        # open follows symlinks and Finder aliases, so a scanned x.eml could
+        # point it at a program. Hand it a private regular-file copy instead.
+        # Fixed executable and argument list, no shell.
+        copy = _private_copy(path)
+        subprocess.run(["/usr/bin/open", str(copy)], check=True, capture_output=True, timeout=15)
     else:
         raise NotImplementedError("Opening source files is only supported on Windows and macOS")
+
+
+def openable_dir() -> Path:
+    """Temp folder for the extension-carrying copies handed to the OS."""
+    return Path(tempfile.gettempdir()) / "emailchrono_sources"
+
+
+def _private_copy(path: Path) -> Path:
+    """Copy ``path``'s bytes (data only, no links or extended attributes) to a
+    regular file in ``openable_dir`` named by content hash plus its suffix."""
+    if not path.is_file():
+        raise OSError(f"Not a regular file: {path.name}")
+    data = path.read_bytes()
+    target = openable_dir() / f"{hashlib.sha256(data).hexdigest()}{path.suffix.lower()}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.is_symlink() or (target.exists() and not target.is_file()):
+        target.unlink()
+    if not target.exists():
+        target.write_bytes(data)
+    return target
 
 
 def remove_source(sha: str) -> None:
@@ -83,8 +106,7 @@ def remove_source(sha: str) -> None:
     if not is_valid_sha256(sha):
         return
     managed_path(sha).unlink(missing_ok=True)
-    tmp_dir = Path(tempfile.gettempdir()) / "emailchrono_sources"
-    for copy in tmp_dir.glob(f"{sha.lower()}.*"):
+    for copy in openable_dir().glob(f"{sha.lower()}.*"):
         copy.unlink(missing_ok=True)
 
 
@@ -125,7 +147,7 @@ def openable_copy(resolved: Path, display_name: str) -> Path:
     suffix = Path(display_name).suffix
     if suffix and resolved.suffix.lower() == suffix.lower():
         return resolved
-    tmp_dir = Path(tempfile.gettempdir()) / "emailchrono_sources"
+    tmp_dir = openable_dir()
     tmp_dir.mkdir(parents=True, exist_ok=True)
     target = tmp_dir / f"{resolved.name}{suffix}"
     if not target.exists():
