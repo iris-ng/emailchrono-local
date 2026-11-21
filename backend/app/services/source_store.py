@@ -54,6 +54,17 @@ def managed_path(sha: str) -> Path:
     return SOURCES_DIR / relative_path_for(sha)
 
 
+def remove_source(sha: str) -> None:
+    """Delete the managed copy of ``sha`` and any openable temp copies of it.
+    The caller must first check that no email row still uses ``sha``."""
+    if not is_valid_sha256(sha):
+        return
+    managed_path(sha).unlink(missing_ok=True)
+    tmp_dir = Path(tempfile.gettempdir()) / "emailchrono_sources"
+    for copy in tmp_dir.glob(f"{sha.lower()}.*"):
+        copy.unlink(missing_ok=True)
+
+
 def resolve_source(email_row: Mapping[str, Any]) -> Optional[Path]:
     """Resolve an email's original source file to a real path, or None.
 
