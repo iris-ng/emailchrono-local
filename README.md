@@ -156,7 +156,7 @@ For detailed architecture, data flow, key design decisions, and code conventions
 
 Uploaded `.eml`, `.msg`, `.pdf`, and `.docx` source containers can optionally be retained in a content-addressed store under `data/sources/` (controlled by `EMAILCHRONO_STORE_SOURCES` env var, default on). The app stores extracted email fields, duplicate-review decisions, audit events, and other metadata in `data/emailchrono.sqlite`; extracted attachments are stored under `data/attachments/<email_id>/`.
 
-Permanent case deletion removes database rows and the owned attachment directories. Soft delete moves a case to trash and keeps its emails and attachments for restore. Soft-deleted items can be restored within 30 days.
+Permanent case deletion removes database rows, the owned attachment directories, and any stored source originals that no other case still uses. Soft delete moves a case to trash and keeps its emails and attachments for restore. Soft-deleted items can be restored within 30 days.
 
 ## Security
 
