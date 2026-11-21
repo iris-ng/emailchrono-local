@@ -443,18 +443,19 @@ def import_bundle(data: bytes) -> Dict[str, Any]:
             snip_map[old_id] = _insert_row(conn, "email_snips", row)
 
         # Second pass for email self/cross FKs now that all maps exist.
+        # derived_from_attachment_id stays NULL here: attachments are not
+        # inserted yet, so the old id may not exist. It is set after step 7.
         for new_id, saved in deferred_email_fks.items():
             conn.execute(
                 """
                 UPDATE emails SET parent_email_id = ?, chain_source_id = ?,
-                    superseded_by_snip_id = ?, derived_from_attachment_id = ?
+                    superseded_by_snip_id = ?
                 WHERE id = ?
                 """,
                 (
                     email_map.get(saved["parent_email_id"]),
                     email_map.get(saved["chain_source_id"]),
                     snip_map.get(saved["superseded_by_snip_id"]),
-                    saved["derived_from_attachment_id"],  # remapped after attachments below
                     new_id,
                 ),
             )
