@@ -197,7 +197,10 @@ def nested_email_filename(nested: Optional[Message]) -> str:
 
 
 def get_text_content(part: Message) -> str:
-    if isinstance(part, EmailMessage):
+    # get_content() decodes a part with no charset as ASCII with replacement
+    # and succeeds, so only use it when a charset is declared; otherwise fall
+    # through to detection below.
+    if isinstance(part, EmailMessage) and part.get_param("charset"):
         try:
             return part.get_content()
         except Exception:
