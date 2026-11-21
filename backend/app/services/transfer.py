@@ -343,6 +343,29 @@ def _validate_blob_members(
         )
 
 
+def _accepted_gaps(
+    zf: zipfile.ZipFile,
+    emails: List[Dict[str, Any]],
+    attachments: List[Dict[str, Any]],
+    declared_missing: set,
+) -> set:
+    """Listed gaps that are real: files the rows refer to that the archive
+    lacks. Bounded by the rows, however long the manifest's list is."""
+    names = set(zf.namelist())
+    gaps = set()
+    for sha in {e.get("source_blob_sha256") for e in emails if e.get("source_blob_sha256")}:
+        variants = {f"sources/{sha}", f"sources/{sha.lower()}"}
+        if not variants & names and variants & declared_missing:
+            gaps.add(f"sources/{sha}")
+    email_ids = {e.get("id") for e in emails}
+    for att in attachments:
+        if att.get("email_id") in email_ids and att.get("disk_path"):
+            member = f"attachments/{Path(att['disk_path']).as_posix()}"
+            if member not in names and member in declared_missing:
+                gaps.add(member)
+    return gaps
+
+
 def _read_bundle(data: bytes) -> Dict[str, Any]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
@@ -413,7 +436,9 @@ def preview_bundle(data: bytes) -> Dict[str, Any]:
             "emails": len(bundle["emails"]),
             "attachments": len(bundle["attachments"]),
             "audit_events": len(bundle["audit"]),
-            "missing_files": len(_declared_missing(manifest)),
+            "missing_files": len(
+                _accepted_gaps(bundle["zip"], bundle["emails"], bundle["attachments"], _declared_missing(manifest))
+            ),
         },
         "compatible": not incompatible,
         "refuse_reason": refuse_reason,
@@ -438,6 +463,7 @@ def import_bundle(data: bytes) -> Dict[str, Any]:
     _validate_email_source_refs(bundle["emails"])
     declared_missing = _declared_missing(manifest)
     _validate_blob_members(zf, bundle["emails"], bundle["attachments"], declared_missing)
+    accepted_gaps = _accepted_gaps(zf, bundle["emails"], bundle["attachments"], declared_missing)
 
     with db.get_conn() as conn:
         current = max_schema_version(conn)
@@ -663,7 +689,7 @@ def import_bundle(data: bytes) -> Dict[str, Any]:
                 "schema_version": export_schema,
                 "source_event_count": len(imported_audit),
                 "source_final_event_hash": final_hash,
-                "missing_files": sorted(declared_missing),
+                "missing_files": sorted(accepted_gaps),
                 "imported_audit_events": imported_audit,
             },
         )
