@@ -287,6 +287,32 @@ def _validate_email_source_refs(emails: List[Dict[str, Any]]) -> None:
             raise ImportError_("Malformed source blob in bundle")
 
 
+def _validate_blob_members(
+    zf: zipfile.ZipFile, emails: List[Dict[str, Any]], attachments: List[Dict[str, Any]]
+) -> None:
+    """Refuse a bundle whose rows refer to source or attachment files it lacks,
+    rather than import records that point at no evidence."""
+    names = set(zf.namelist())
+    missing_sources = {
+        sha
+        for sha in (e.get("source_blob_sha256") for e in emails)
+        if sha and f"sources/{sha}" not in names and f"sources/{sha.lower()}" not in names
+    }
+    email_ids = {e.get("id") for e in emails}
+    missing_attachments = [
+        att
+        for att in attachments
+        if att.get("email_id") in email_ids
+        and att.get("disk_path")
+        and f"attachments/{Path(att['disk_path']).as_posix()}" not in names
+    ]
+    if missing_sources or missing_attachments:
+        raise ImportError_(
+            "Bundle is incomplete: "
+            f"{len(missing_sources)} source file(s) and {len(missing_attachments)} attachment file(s) are missing"
+        )
+
+
 def _read_bundle(data: bytes) -> Dict[str, Any]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
@@ -379,6 +405,7 @@ def import_bundle(data: bytes) -> Dict[str, Any]:
     zf: zipfile.ZipFile = bundle["zip"]
     _validate_source_blobs(zf)
     _validate_email_source_refs(bundle["emails"])
+    _validate_blob_members(zf, bundle["emails"], bundle["attachments"])
 
     with db.get_conn() as conn:
         current = max_schema_version(conn)
