@@ -6,6 +6,7 @@ from .. import db
 from ..config import ATTACHMENTS_DIR
 from ..services.audit import audit_snapshot_email, record_audit_event
 from ..services.email_serialize import serialize_email
+from ..services.quoted_copies import QUOTED_COPY_FLAG
 from ..services.text_norm import json_dumps, json_loads, row_to_dict
 from ..services import tags as tag_service
 from ..services.doc_id import allocate_doc_id
@@ -566,6 +567,30 @@ def list_deleted_emails(case_id: int) -> List[Dict[str, Any]]:
         return [serialize_email(row, attachments.get(row["id"], []), False) for row in rows]
 
 
+def _trash_email_row(
+    conn: sqlite3.Connection, row: sqlite3.Row, now: str, metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    email_id = row["id"]
+    conn.execute("UPDATE emails SET deleted_at = ? WHERE id = ?", (now, email_id))
+    conn.execute(
+        "UPDATE email_text_mappings SET stale = 1, updated_at = ? "
+        "WHERE source_email_id = ? OR target_email_id = ?",
+        (now, email_id, email_id),
+    )
+    after = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
+    record_audit_event(
+        conn,
+        case_id=row["case_id"],
+        action="email.trashed",
+        entity_type="email",
+        entity_id=email_id,
+        before=audit_snapshot_email(row),
+        after=audit_snapshot_email(after),
+        metadata=metadata,
+    )
+    conn.execute("UPDATE cases SET updated_at = ? WHERE id = ?", (now, row["case_id"]))
+
+
 def soft_delete_email(email_id: int) -> bool:
     now = db.utc_now()
     with db.get_conn() as conn:
@@ -575,23 +600,25 @@ def soft_delete_email(email_id: int) -> bool:
         ).fetchone()
         if not row:
             return False
-        conn.execute("UPDATE emails SET deleted_at = ? WHERE id = ?", (now, email_id))
-        conn.execute(
-            "UPDATE email_text_mappings SET stale = 1, updated_at = ? "
-            "WHERE source_email_id = ? OR target_email_id = ?",
-            (now, email_id, email_id),
-        )
-        after = conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone()
-        record_audit_event(
-            conn,
-            case_id=row["case_id"],
-            action="email.trashed",
-            entity_type="email",
-            entity_id=email_id,
-            before=audit_snapshot_email(row),
-            after=audit_snapshot_email(after),
-        )
-        conn.execute("UPDATE cases SET updated_at = ? WHERE id = ?", (now, row["case_id"]))
+        _trash_email_row(conn, row, now)
+    return True
+
+
+def trash_quoted_copy(conn: sqlite3.Connection, email_id: int, standalone_email_id: int) -> bool:
+    """Move a quoted card that copies a standalone email to Email trash, within
+    the caller's transaction, and flag it so ingest never trashes it again."""
+    row = conn.execute(
+        "SELECT * FROM emails WHERE id = ? AND deleted_at IS NULL", (email_id,)
+    ).fetchone()
+    if not row:
+        return False
+    now = db.utc_now()
+    detail = {"reason": "quoted_copy_of_standalone", "standalone_email_id": standalone_email_id}
+    _trash_email_row(conn, row, now, metadata=detail)
+    conn.execute(
+        "INSERT INTO email_flags (email_id, flag, detail_json, created_at) VALUES (?, ?, ?, ?)",
+        (email_id, QUOTED_COPY_FLAG, json_dumps(detail), now),
+    )
     return True
 
 

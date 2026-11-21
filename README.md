@@ -5,7 +5,7 @@ Local web app for building an email chronology from `.eml` and `.msg` files. It 
 ## Current Features
 
 - Import `.eml`, `.msg`, `.pdf`, and `.docx` files by upload or local folder path, with live per-file ingest progress. PDFs and Word documents containing printed/exported emails are parsed for headers and content; non-email documents are skipped gracefully.
-- Extract standalone emails plus quoted/trailing messages where reply-chain structure can be detected; email-bearing attachments (forwarded `.eml`/`.msg`, `message/rfc822`, embedded `.msg`) are expanded into first-class timeline rows.
+- Extract standalone emails plus quoted/trailing messages where reply-chain structure can be detected; email-bearing attachments (forwarded `.eml`/`.msg`, `message/rfc822`, embedded `.msg`) are expanded into first-class timeline rows. When the original of a quoted message is also uploaded, the quoted copy moves to Email trash (restorable) if its body, sender, date and subject match and it has no notes, importance, tags or edits.
 - Build chronology and thread views with editable email metadata and a permanent notes panel; long lists load progressively (paged) with a Load more control.
 - Render emails as plain text or sanitized HTML, under a per-matter default timezone.
 - Search subject and body text with SQLite FTS.
@@ -112,7 +112,7 @@ These are the files/directories that actually run or build the program and are i
 
 - `backend/app/**/*.py` - FastAPI application organized in layers:
   - `api/` — HTTP routers: `cases.py`, `ingest.py` (with upload size validation), `emails.py`, `attachments.py`, `tags.py`, `transfer.py` (export/import)
-  - `services/` — domain logic: `ingest.py` (core pipeline with size limits), `quotes.py` (quoted-block extraction), `snip.py` (manual split), `duplicates.py` (duplicate scoring), `fingerprint.py` (MinHash/LSH near-duplicate fingerprints), `text_norm.py` (shared text normalization), `dates.py` (timezone normalization), `audit.py` (append-only trail), `tags.py`, `boilerplate.py`, `sanitize.py` (HTML/formula escaping), `nested_email.py`, `email_serialize.py`, `source_store.py` (SHA-256 content-addressing with path validation), `transfer.py` (bundle export/import with blob validation)
+  - `services/` — domain logic: `ingest.py` (core pipeline with size limits), `quotes.py` (quoted-block extraction), `quoted_copies.py` (when a quoted card copies a standalone email), `snip.py` (manual split), `duplicates.py` (duplicate scoring), `fingerprint.py` (MinHash/LSH near-duplicate fingerprints), `text_norm.py` (shared text normalization), `dates.py` (timezone normalization), `audit.py` (append-only trail), `tags.py`, `boilerplate.py`, `sanitize.py` (HTML/formula escaping), `nested_email.py`, `email_serialize.py`, `source_store.py` (SHA-256 content-addressing with path validation), `transfer.py` (bundle export/import with blob validation)
   - `repos/` — data access layer over SQLite: `cases.py`, `emails.py`, `duplicates.py`, `threads.py`, `ordering.py`, `ingest_jobs.py`, `case_folders.py`, `dates.py`, `tags.py`, `attachments.py`
   - `parsers/` — email parsing: `eml.py` (RFC 5822), `msg.py` (Outlook `.msg`), `pdf.py` (pdfplumber, with page limit), `docx.py` (python-docx)
   - `models/schemas.py` — Pydantic request/response models
