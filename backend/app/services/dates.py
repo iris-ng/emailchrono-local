@@ -141,8 +141,9 @@ def normalize_localized_text(text: str) -> str:
 
 
 # Optional explicit offset after the time, e.g. "+0800", "+08:00", "GMT+0800".
-# When present it wins over the case's default zone.
-LOCALIZED_OFFSET = r"(?:\s*(?:GMT|UTC)?\s*(?P<offset>[+-]\d{2}:?\d{2}))?"
+# When present it wins over the case's default zone. A bare offset must follow
+# a space, so a time range such as "09:30-11:00" is not read as UTC-11:00.
+LOCALIZED_OFFSET = r"(?:(?:\s*(?:GMT|UTC)\s*|\s+|(?<=\s))(?P<offset>[+-]\d{2}:?\d{2})(?!\d))?"
 
 
 def parse_chinese_numeric_datetime(text: str) -> Optional[datetime]:
