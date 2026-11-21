@@ -11,6 +11,7 @@ Phase 2) or still live at a folder-scan path on disk.
 """
 
 import hashlib
+import os
 import re
 import shutil
 import tempfile
@@ -52,6 +53,11 @@ def store_source(content: bytes, sha: str) -> str:
 def managed_path(sha: str) -> Path:
     """Absolute path where ``sha`` would live in the managed store."""
     return SOURCES_DIR / relative_path_for(sha)
+
+
+def can_open_sources() -> bool:
+    """The open route hands files to os.startfile, which only Windows has."""
+    return hasattr(os, "startfile")
 
 
 def remove_source(sha: str) -> None:
