@@ -24,16 +24,28 @@ MAX_ZONE_SHIFT_SECONDS = 14 * 3600
 ZONE_STEP_SECONDS = 15 * 60
 SLACK_SECONDS = 60
 
+# Short bodies ("Thanks, will do.") recur across separate messages, so they
+# count as a copy only with a matching sender and a time that agrees to the
+# minute, not merely up to a time-zone shift.
+SHORT_BODY_CHARS = 40
+
 _NO_SUBJECT = {"", "(no subject)"}
+
+
+def date_gap(quoted: Optional[str], standalone: Optional[str]) -> Optional[float]:
+    """Seconds between two ISO dates, or None when either is missing or unreadable."""
+    if not quoted or not standalone:
+        return None
+    try:
+        return abs((datetime.fromisoformat(quoted) - datetime.fromisoformat(standalone)).total_seconds())
+    except (TypeError, ValueError):
+        return None
 
 
 def date_agreement(quoted: Optional[str], standalone: Optional[str]) -> Optional[bool]:
     """True or False when both dates are readable, None when either is not."""
-    if not quoted or not standalone:
-        return None
-    try:
-        gap = abs((datetime.fromisoformat(quoted) - datetime.fromisoformat(standalone)).total_seconds())
-    except (TypeError, ValueError):
+    gap = date_gap(quoted, standalone)
+    if gap is None:
         return None
     if gap > MAX_ZONE_SHIFT_SECONDS + SLACK_SECONDS:
         return False
@@ -68,6 +80,9 @@ def is_quoted_copy(
     date = date_agreement(quoted.get("date_utc"), standalone.get("date_utc"))
     if sender is False or date is False or not subjects_agree(quoted.get("subject"), standalone.get("subject")):
         return False
+    if min(len(q_body), len(s_body)) < SHORT_BODY_CHARS:
+        gap = date_gap(quoted.get("date_utc"), standalone.get("date_utc"))
+        return sender is True and gap is not None and gap <= SLACK_SECONDS and q_body == s_body
     if sender is None or date is None:
         return q_body == s_body
     return bodies_similar(q_body, s_body)

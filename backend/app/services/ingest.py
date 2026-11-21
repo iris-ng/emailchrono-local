@@ -37,10 +37,10 @@ from .ingest_map import (
     record_self_mappings,
 )
 from .nested_email import parse_nested_email
-from .quoted_copies import QUOTED_COPY_FLAG, is_quoted_copy
+from .quoted_copies import is_quoted_copy
 from .quotes import extract_quoted_blocks
 from . import source_store
-from .tags import UNDATED_TAG_NAME, sync_undated_tag
+from .tags import sync_undated_tag
 from .text_norm import canonical_body
 
 
@@ -708,67 +708,31 @@ def reconcile_quoted_duplicates(conn, case_id: int) -> int:
     order-independent: it catches the case where the standalone original arrives
     after a reply that already quoted it. A card moves only when
     ``is_quoted_copy`` holds (body, sender, date and subject agree) and nobody
-    has worked on it: no notes, importance, edits or tags, and no "dissimilar"
-    decision against that standalone. Cards are never hard-deleted; a restored
-    card is flagged and never moved again.
+    has worked on it (see ``email_repo.untouched_quoted_cards``). Cards are
+    never hard-deleted; a restored card is flagged and never moved again.
     """
-    live = [
-        dict(row)
+    # Normalize each body once: this is an O(quoted x standalone) comparison.
+    standalones = [
+        (dict(row), norm)
         for row in conn.execute(
             """
-            SELECT id, source_kind, body_text, from_addr, date_utc, subject,
-                   notes, important, user_edited
-            FROM emails
+            SELECT id, body_text, from_addr, date_utc, subject FROM emails
             WHERE case_id = ? AND deleted_at IS NULL AND superseded_at IS NULL
-              AND source_kind IN ('standalone', 'quoted')
+              AND source_kind = 'standalone'
             """,
             (case_id,),
         )
-    ]
-    # Normalize each body once: this is an O(quoted x standalone) comparison.
-    standalones = [
-        (row, norm)
-        for row in live
-        if row["source_kind"] == "standalone" and (norm := canonical_body(row["body_text"]))
+        if (norm := canonical_body(row["body_text"]))
     ]
     if not standalones:
         return 0
-    # A user's tag protects a card; the auto-managed "Undated" tag does not.
-    protected = {
-        row[0]
-        for row in conn.execute(
-            """
-            SELECT et.email_id FROM email_tags et
-            JOIN emails e ON e.id = et.email_id
-            JOIN tags t ON t.id = et.tag_id
-            WHERE e.case_id = ? AND t.name <> ? COLLATE NOCASE
-            UNION
-            SELECT f.email_id FROM email_flags f JOIN emails e ON e.id = f.email_id
-            WHERE e.case_id = ? AND f.flag = ?
-            """,
-            (case_id, UNDATED_TAG_NAME, case_id, QUOTED_COPY_FLAG),
-        )
-    }
-    dissimilar = {
-        (row[0], row[1])
-        for row in conn.execute(
-            "SELECT email_a_id, email_b_id FROM email_duplicate_candidates"
-            " WHERE case_id = ? AND status = 'dissimilar'",
-            (case_id,),
-        )
-    }
     moved = 0
-    for row in live:
-        if row["source_kind"] != "quoted" or row["id"] in protected:
-            continue
-        if (row["notes"] or "").strip() or row["important"] or row["user_edited"]:
-            continue
-        norm = canonical_body(row["body_text"])
+    for quoted in email_repo.untouched_quoted_cards(conn, case_id):
+        norm = canonical_body(quoted["body_text"])
         for standalone, standalone_norm in standalones:
-            if tuple(sorted((row["id"], standalone["id"]))) in dissimilar:
-                continue
-            if is_quoted_copy(row, standalone, norm, standalone_norm):
-                if email_repo.trash_quoted_copy(conn, row["id"], standalone["id"]):
+            if is_quoted_copy(quoted, standalone, norm, standalone_norm):
+                # Re-checks that the card is still untouched as it writes.
+                if email_repo.trash_quoted_copy(conn, quoted["id"], standalone["id"]):
                     moved += 1
                 break
     return moved

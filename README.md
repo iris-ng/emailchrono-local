@@ -5,7 +5,7 @@ Local web app for building an email chronology from `.eml` and `.msg` files. It 
 ## Current Features
 
 - Import `.eml`, `.msg`, `.pdf`, and `.docx` files by upload or local folder path, with live per-file ingest progress. PDFs and Word documents containing printed/exported emails are parsed for headers and content; non-email documents are skipped gracefully.
-- Extract standalone emails plus quoted/trailing messages where reply-chain structure can be detected; email-bearing attachments (forwarded `.eml`/`.msg`, `message/rfc822`, embedded `.msg`) are expanded into first-class timeline rows. When the original of a quoted message is also uploaded, the quoted copy moves to Email trash (restorable) if its body, sender, date and subject match and it has no notes, importance, tags or edits.
+- Extract standalone emails plus quoted/trailing messages where reply-chain structure can be detected; email-bearing attachments (forwarded `.eml`/`.msg`, `message/rfc822`, embedded `.msg`) are expanded into first-class timeline rows. When the original of a quoted message is also uploaded, the quoted copy moves to Email trash (restorable) if its body, sender, date and subject match and nobody has worked on it (notes, importance, tags, edits, manual order or text links, duplicate decisions).
 - Build chronology and thread views with editable email metadata and a permanent notes panel; long lists load progressively (paged) with a Load more control.
 - Render emails as plain text or sanitized HTML, under a per-matter default timezone.
 - Search subject and body text with SQLite FTS.
